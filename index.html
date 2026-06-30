@@ -344,6 +344,66 @@
     .rest-day .emoji { font-size: 56px; }
     .rest-day h2 { font-size: 22px; font-weight: 700; }
     .rest-day p  { font-size: 14px; color: var(--muted); max-width: 260px; line-height: 1.5; }
+
+    /* ── WARMUP TIMER ── */
+    .timer-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+    .timer-track {
+      flex: 1;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .timer-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+      transition: width 1s linear;
+    }
+    .timer-display {
+      font-size: 15px;
+      font-weight: 700;
+      width: 42px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+    .timer-btn {
+      background: var(--accent);
+      border: none;
+      border-radius: 20px;
+      color: white;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 6px 14px;
+      cursor: pointer;
+      flex-shrink: 0;
+      letter-spacing: 0.2px;
+      -webkit-tap-highlight-color: transparent;
+      transition: background 0.2s;
+    }
+    .timer-btn.reset { background: var(--border); color: var(--muted); }
+
+    /* ── OVERLOAD ALERT ── */
+    .oa-banner {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 10px;
+      padding: 9px 12px;
+      background: var(--accent-dim);
+      border: 1px solid var(--accent-bdr);
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent);
+    }
   </style>
 </head>
 <body>
@@ -560,6 +620,84 @@ function beep() {
   } catch(e) {}
 }
 
+// ─── WARMUP TIMER ────────────────────────────────────────────────────────────
+
+let wtRunning = false, wtSec = 600, wtTotal = 600, wtTick = null;
+
+function warmupBtnClick() {
+  if (wtSec <= 0) {
+    // Reset
+    clearInterval(wtTick);
+    wtRunning = false;
+    wtSec = wtTotal;
+    updateWarmupDisplay();
+    const btn = document.getElementById('wt-btn');
+    if (btn) { btn.textContent = 'Start'; btn.classList.remove('reset'); }
+    return;
+  }
+  if (wtRunning) {
+    clearInterval(wtTick);
+    wtRunning = false;
+    const btn = document.getElementById('wt-btn');
+    if (btn) btn.textContent = 'Resume';
+  } else {
+    wtRunning = true;
+    const btn = document.getElementById('wt-btn');
+    if (btn) btn.textContent = 'Pause';
+    wtTick = setInterval(() => {
+      wtSec--;
+      updateWarmupDisplay();
+      if (wtSec <= 0) {
+        clearInterval(wtTick);
+        wtRunning = false;
+        beep();
+        const b = document.getElementById('wt-btn');
+        if (b) { b.textContent = 'Reset'; b.classList.add('reset'); }
+      }
+    }, 1000);
+  }
+}
+
+function updateWarmupDisplay() {
+  const m = Math.floor(wtSec / 60), s = wtSec % 60;
+  const disp = document.getElementById('wt-display');
+  const fill = document.getElementById('wt-fill');
+  if (disp) disp.textContent = `${m}:${String(s).padStart(2, '0')}`;
+  if (fill) fill.style.width = `${Math.max(0, (wtSec / wtTotal) * 100)}%`;
+}
+
+// ─── OVERLOAD ALERT ───────────────────────────────────────────────────────────
+
+function topReps(repsStr) {
+  const m = repsStr.match(/(\d+)\s*$/);
+  return m ? parseInt(m[1]) : 99;
+}
+
+function isOverloadReady(day, ex) {
+  const top = topReps(ex.reps);
+  for (let s = 0; s < ex.sets; s++) {
+    const sd = getSet(day, ex.name, s);
+    if (!sd?.done || !sd?.reps || parseInt(sd.reps) < top) return false;
+  }
+  return true;
+}
+
+function updateOABanner(ei) {
+  const banner = document.getElementById(`oa${ei}`);
+  if (!banner) return;
+  const ex = W[activeDay].exercises[ei];
+  const top = topReps(ex.reps);
+  let ready = true;
+  for (let s = 0; s < ex.sets; s++) {
+    const doneBtn = document.getElementById(`db${ei}_${s}`);
+    const repsEl  = document.getElementById(`r${ei}_${s}`);
+    if (!doneBtn?.classList.contains('done') || !repsEl?.value || parseInt(repsEl.value) < top) {
+      ready = false; break;
+    }
+  }
+  banner.style.display = ready ? 'flex' : 'none';
+}
+
 // ─── RENDER ──────────────────────────────────────────────────────────────────
 
 let activeDay = todayKey() || 'monday';
@@ -582,6 +720,13 @@ function renderContent() {
   const day = activeDay;
   const workout = W[day];
   const stabs = STABILITY[workout.stability];
+
+  // Reset warmup timer for the new day
+  clearInterval(wtTick);
+  wtRunning = false;
+  wtTotal = workout.zone2 ? 600 : 300;
+  wtSec = wtTotal;
+
   let h = '';
 
   // ── Day heading
@@ -618,8 +763,13 @@ function renderContent() {
         <span class="info-icon">🚴</span>
         <div>
           <div class="info-title">Zone 2 · 10 min stationary bike</div>
-          <div class="info-sub">Conversational pace — you should be able to speak full sentences. If you can't talk, slow down.</div>
+          <div class="info-sub">Conversational pace — full sentences comfortably. If you can't talk, slow down.</div>
         </div>
+      </div>
+      <div class="timer-row">
+        <div class="timer-track"><div class="timer-fill" id="wt-fill" style="width:100%"></div></div>
+        <span class="timer-display" id="wt-display">10:00</span>
+        <button class="timer-btn" id="wt-btn" onclick="warmupBtnClick()">Start</button>
       </div>
     </div>`;
   } else {
@@ -630,6 +780,11 @@ function renderContent() {
           <div class="info-title">Warmup · 5 min treadmill walk</div>
           <div class="info-sub">Easy pace to get blood moving before lifting</div>
         </div>
+      </div>
+      <div class="timer-row">
+        <div class="timer-track"><div class="timer-fill" id="wt-fill" style="width:100%"></div></div>
+        <span class="timer-display" id="wt-display">5:00</span>
+        <button class="timer-btn" id="wt-btn" onclick="warmupBtnClick()">Start</button>
       </div>
     </div>`;
   }
@@ -678,6 +833,7 @@ function renderContent() {
         </button>
       </div>`;
     }
+    h += `<div class="oa-banner" id="oa${ei}" style="display:${isOverloadReady(day, ex) ? 'flex' : 'none'}">↑ Hit your top reps — add weight next session</div>`;
     h += `</div>`;
   });
 
@@ -750,6 +906,7 @@ function toggleDone(ei, s, exName, totalSets) {
     }
   }
   document.getElementById(`ex${ei}`)?.classList.toggle('all-done', allDone);
+  updateOABanner(ei);
 }
 
 // ─── INIT ────────────────────────────────────────────────────────────────────
